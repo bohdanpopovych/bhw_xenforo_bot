@@ -111,31 +111,23 @@ class ForumThread:
     def setup_email(self, _username, _password, _control_email):
         self.email_wrapper = EmailWrapper(_username, _password, _control_email)
 
-    def monitor_thread(self, refresh_period: int):
-        print('Scanning thread {}\n'.format(
-            self.url.split('/')[-1]
-        ))
+    def scan_thread(self):
+        try:
+            self.last_message_number = self.get_last_message_number()
 
-        self.last_message_number = self.get_last_message_number()
+            new_messages = self.check_messages(self.get_new_messages())
 
-        while True:
-            try:
-                new_messages = self.check_messages(self.get_new_messages())
+            self.send_emails(new_messages)
+            self.pending_messages.extend(new_messages)
 
-                self.send_emails(new_messages)
-                self.pending_messages.extend(new_messages)
+            # noinspection PyRedeclaration
+            self.last_message_number = self.get_last_message_number()
 
-                # noinspection PyRedeclaration
-                self.last_message_number = self.get_last_message_number()
+            responses = self.email_wrapper.get_emails()
+            self.send_private_messages(responses)
 
-                sleep(refresh_period / 1000)
-
-                responses = self.email_wrapper.get_emails()
-                self.send_private_messages(responses)
-
-            except WebDriverException as ex:
-                print('Cannot connect to BHW...\nRetrying in 10s...')
-                sleep(10)
+        except WebDriverException as ex:
+            print('Cannot connect to BHW...\nSkipping this attempt...')
 
     def send_private_message(self, url, message_text, title='title'):
         self.driver.get(self.url)
@@ -379,7 +371,11 @@ print('Signing in...')
 login('bohdan.popovych.08@gmail.com', 'therat4ever')
 print('Signed in successfully!')
 
-for thread_settings in settings_list:
-    new_forum_thread = ForumThread()
-    new_forum_thread.init_from_settings(thread_settings, driver)
-    new_forum_thread.monitor_thread.(global_settings.refresh_period)
+
+while True:
+    for thread_settings in settings_list:
+        new_forum_thread = ForumThread()
+        new_forum_thread.init_from_settings(thread_settings, driver)
+        new_forum_thread.scan_thread()
+
+    sleep(global_settings.refresh_period)

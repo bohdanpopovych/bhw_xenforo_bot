@@ -371,11 +371,14 @@ print('Signing in...')
 login('bohdan.popovych.08@gmail.com', 'therat4ever')
 print('Signed in successfully!')
 
+threads_count = len(settings_list)
 
 while True:
-    for thread_settings in settings_list:
+    for i, thread_settings in enumerate(settings_list):
+        print('Scanning thread {}/{}'.format(i + 1, threads_count), end='\r')
         new_forum_thread = ForumThread()
         new_forum_thread.init_from_settings(thread_settings, driver)
         new_forum_thread.scan_thread()
 
+    print('Pausing for {} sec...'.format(global_settings.refresh_period), end='\r')
     sleep(global_settings.refresh_period)

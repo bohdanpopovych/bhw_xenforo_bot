@@ -5,7 +5,6 @@ import re
 import configparser
 import codecs
 
-from multiprocessing.pool import Pool
 
 from selenium import webdriver
 from datetime import datetime
@@ -15,6 +14,7 @@ from selenium.webdriver.common.by import By
 from selenium.webdriver.common.keys import Keys
 from selenium.webdriver.support import expected_conditions as EC
 from selenium.webdriver.support.wait import WebDriverWait
+from selenium.webdriver.common.action_chains import ActionChains
 
 
 class ThreadSettingsModule:
@@ -34,8 +34,9 @@ class ThreadSettingsModule:
 class GlobalSettings:
     def __init__(self, file_name):
         self.file_name = file_name
-        self.forum_username = str()
+        self.forum_login = str()
         self.forum_password = str()
+        self.forum_username = str()
         self.refresh_period = int()
         self.email_username = str()
         self.email_password = str()
@@ -51,8 +52,9 @@ class GlobalSettings:
         try:
             for section in config.sections():
                 if section == 'GLOBAL':
-                    self.forum_username = config[section]['forum_login']
+                    self.forum_login = config[section]['forum_login']
                     self.forum_password = config[section]['forum_password']
+                    self.forum_username = config[section]['forum_username']
                     self.refresh_period = int(config[section]['refresh_period'])
                     self.email_username = config[section]['email_username']
                     self.email_password = config[section]['email_password']
@@ -98,13 +100,16 @@ class ForumThread:
         self.last_message_number = 0
         self.keywords = []
         self.email_wrapper = None
+        self.message_title = ''
+        self.message_body = ''
 
     def init_from_settings(self, settings: ThreadSettingsModule, _driver):
             self.driver = _driver
             self.url = settings.thread_url
             self.pending_messages = []
             self.keywords = settings.keywords
-            self.email_wrapper = None
+            self.message_title = settings.message_title
+            self.message_body = settings.message_body
 
             self.email_wrapper = settings.email_wrapper
 
@@ -168,11 +173,24 @@ class ForumThread:
         print('Private message to {} has been sent'.format(post_author))
 
     def send_private_messages(self, response):
+
+        # if response is empty - exit the method
+        if not response:
+            return
+
+        print('Signing in...')
+        forum_login(global_settings.forum_login, global_settings.forum_password)
+        print('Signed in successfully!\nSending private messages...\n')
+
         for key, item in response.items():
             filtered_messages = list(filter(lambda x: x.Url == key, self.pending_messages))
             if filtered_messages:
                 message = filtered_messages[0]
-                self.send_private_message(message.Url, private_message_text)
+                self.send_private_message(message.Url, self.message_body, self.message_title)
+
+        print('Log out...')
+        forum_logout()
+        print('Log out success!')
 
     def get_last_message_number(self):
         self.driver.get(self.url)
@@ -204,7 +222,7 @@ class ForumThread:
         self.driver.get(self.url)
         messages = self.driver.find_element_by_id('messageList').find_elements_by_class_name('message')
 
-        bhw_nickname = self.driver.find_element_by_class_name('accountUsername').text
+        bhw_nickname = global_settings.forum_username
 
         for message in messages:
             message_author = message.get_attribute('data-author')
@@ -332,7 +350,7 @@ class EmailWrapper:
         return results
 
 
-def login(username, password):
+def forum_login(username, password):
     login_url = 'https://www.blackhatworld.com/login'
 
     while True:
@@ -354,10 +372,21 @@ def login(username, password):
 
     try:
         driver.find_element_by_link_text('Log in or Sign up')
-        login(username, password)
+        forum_login(username, password)
 
     except NoSuchElementException:
         pass
+
+
+def forum_logout():
+    profile_element = driver.find_element_by_class_name('accountUsername')
+
+    hover = ActionChains(driver).move_to_element(profile_element)
+    hover.perform()
+
+    logout_url = driver.find_element_by_xpath('//a[@class="LogOut"]').get_attribute('href')
+
+    driver.get(logout_url)
 
 
 global_settings = GlobalSettings('settings.ini')
@@ -367,18 +396,15 @@ print('Starting browser...')
 driver = webdriver.PhantomJS()
 print('Browser started!')
 
-print('Signing in...')
-login('bohdan.popovych.08@gmail.com', 'therat4ever')
-print('Signed in successfully!')
-
-threads_count = len(settings_list)
-
 while True:
-    for i, thread_settings in enumerate(settings_list):
-        print('Scanning thread {}/{}'.format(i + 1, threads_count), end='\r')
-        new_forum_thread = ForumThread()
-        new_forum_thread.init_from_settings(thread_settings, driver)
-        new_forum_thread.scan_thread()
+    try:
+        for thread_settings in settings_list:
+            new_forum_thread = ForumThread()
+            new_forum_thread.init_from_settings(thread_settings, driver)
+            new_forum_thread.scan_thread()
 
-    print('Pausing for {} sec...'.format(global_settings.refresh_period), end='\r')
-    sleep(global_settings.refresh_period)
+        sleep(global_settings.refresh_period)
+
+    except Exception as ex:
+        print('Problems with internet connection. Retrying...')
+        sleep(5)
